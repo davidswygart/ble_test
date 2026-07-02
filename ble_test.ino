@@ -4,9 +4,8 @@
 // ----------------------------------------------------
 // Configuration
 // ----------------------------------------------------
-static const size_t SAMPLE_SIZE = 2;          // int16_t
-static const size_t BUFFER_LENGTH = 2048;     // bytes
-static const uint32_t SAMPLE_INTERVAL_MS = 5000;
+static const size_t BUFFER_LENGTH = 2048;
+static const uint32_t SAMPLE_INTERVAL_MS = 200;
 
 uint8_t circBuffer[BUFFER_LENGTH];
 size_t writeIndex = 0;
@@ -54,7 +53,6 @@ void setup() {
     NimBLEDevice::init("XIAO-ESP32S3-History");
 
     NimBLEServer* server = NimBLEDevice::createServer();
-
     NimBLEService* service = server->createService(SERVICE_UUID);
 
     historyChar = service->createCharacteristic(
@@ -62,15 +60,20 @@ void setup() {
         NIMBLE_PROPERTY::READ
     );
 
-    // Initial empty buffer
     historyChar->setValue(circBuffer, BUFFER_LENGTH);
 
     service->start();
 
+    // -----------------------------
+    // Correct advertising setup
+    // -----------------------------
     NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
-    adv->addServiceUUID(SERVICE_UUID);
 
-    // No scan response needed
+    NimBLEAdvertisementData adData;
+    adData.setName("XIAO-ESP32S3-History");
+    adData.addServiceUUID(SERVICE_UUID);
+
+    adv->setAdvertisementData(adData);
     adv->start();
 
     Serial.println("BLE ready, advertising...");
