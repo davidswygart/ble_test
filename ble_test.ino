@@ -4,8 +4,8 @@
 // ----------------------------------------------------
 // Configuration
 // ----------------------------------------------------
-static const size_t BUFFER_LENGTH = 2048;
-static const uint32_t SAMPLE_INTERVAL_MS = 200;
+static const size_t BUFFER_LENGTH = 512;
+static const uint32_t SAMPLE_INTERVAL_MS = 2000;
 
 uint8_t circBuffer[BUFFER_LENGTH];
 size_t writeIndex = 0;
