@@ -1,0 +1,17 @@
+LTspice 24.1.9 for Windows
+Circuit: C:\Users\DeskDave\Desktop\inverter_control\scaleVoltage.net
+Start Time: Sun Jun 28 17:58:16 2026
+solver = Normal
+Maximum thread count: 20
+tnom = 27
+temp = 27
+method = trap
+Direct Newton iteration for .op point succeeded.
+Total elapsed time: 0.062 seconds.
+
+Files loaded:
+C:\Users\DeskDave\Desktop\inverter_control\scaleVoltage.net
+C:\Users\DeskDave\AppData\Local\LTspice\lib\cmp\standard.dio
+C:\Users\DeskDave\Desktop\inverter_control\LM318.txt
+C:\Users\DeskDave\AppData\Local\LTspice\lib\sub\UniversalOpAmp5.lib
+
