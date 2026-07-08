@@ -1,91 +1,136 @@
-#include <Arduino.h>
 #include <NimBLEDevice.h>
 
-// ----------------------------------------------------
-// Configuration
-// ----------------------------------------------------
-static const size_t BUFFER_LENGTH = 512;
-static const uint32_t SAMPLE_INTERVAL_MS = 2000;
+// Standard Nordic UART Service (NUS) UUIDs
+#define SERVICE_UUID           "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
+#define CHARACTERISTIC_UUID_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
+#define CHARACTERISTIC_UUID_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
 
-uint8_t circBuffer[BUFFER_LENGTH];
-size_t writeIndex = 0;
+NimBLEServer *pServer = NULL;
+NimBLECharacteristic *pTxCharacteristic = NULL;
 
-// ----------------------------------------------------
-// BLE UUIDs
-// ----------------------------------------------------
-#define SERVICE_UUID        "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
-#define CHAR_UUID_HISTORY   "6e400004-b5a3-f393-e0a9-e50e24dcca9e"
+// Declared volatile to enforce cross-core execution safety
+bool should_send = false;
+volatile bool deviceConnected = false;
+volatile uint16_t activeConnHandle = 0;
 
-NimBLECharacteristic* historyChar;
+// Compact 8-byte historical entry structure
+struct __attribute__((packed)) DataPoint {
+  uint16_t timestamp; 
+  uint8_t value;    
+};
+static_assert(sizeof(DataPoint) == 3, "DataPoint must be 3 bytes");
 
-// ----------------------------------------------------
-// Fake sensor
-// ----------------------------------------------------
-int16_t readSensor() {
-    return (millis() / 100) % 1000;
-}
+const int TOTAL_POINTS = 10000;
+DataPoint sensorHistory[TOTAL_POINTS];
 
-// ----------------------------------------------------
-// Circular buffer write
-// ----------------------------------------------------
-void addSample(int16_t value) {
-    circBuffer[writeIndex] = value & 0xFF;
-    writeIndex = (writeIndex + 1) % BUFFER_LENGTH;
+void sendHistoricalData();
 
-    circBuffer[writeIndex] = (value >> 8) & 0xFF;
-    writeIndex = (writeIndex + 1) % BUFFER_LENGTH;
-}
+class MyCharacteristicCallbacks: public NimBLECharacteristicCallbacks {
+    void onWrite(NimBLECharacteristic* pCharacteristic, NimBLEConnInfo& connInfo) override {
+        std::string rxValue = pCharacteristic->getValue();
+        if (rxValue.length() > 0 && deviceConnected) {
+            Serial.println("[BLE] Valid transfer command recognized. Initiating bulk dump...");
+            should_send = true;
+        }
+    }
+};
 
-// ----------------------------------------------------
-// Update BLE characteristic with full buffer
-// ----------------------------------------------------
-void updateBLEBlob() {
-    historyChar->setValue(circBuffer, BUFFER_LENGTH);
-}
+class MyServerCallbacks: public NimBLEServerCallbacks {
+    void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) override {
+        deviceConnected = true;
+        activeConnHandle = connInfo.getConnHandle(); 
+        Serial.printf("[BLE] Client successfully connected! Connection Handle: %d\n", activeConnHandle);
+        
+        // PERFORMANCE INJECTION: Request optimized 15ms window directly via server reference
+        pServer->updateConnParams(activeConnHandle, 12, 24, 0, 400); 
+    }
+    
+    void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override {
+        deviceConnected = false;
+        activeConnHandle = 0;
+        Serial.printf("[BLE] Client disconnected cleanly. Reason code: %d\n", reason);
+        Serial.println("[BLE] Resetting stack advertising profile...");
+        pServer->startAdvertising(); 
+    }
+};
 
-// ----------------------------------------------------
-// Setup
-// ----------------------------------------------------
 void setup() {
-    Serial.begin(115200);
-    delay(200);
+  Serial.begin(115200);
+  delay(1500); 
+  Serial.println("[System] Booting up hardware stack...");
 
-    NimBLEDevice::init("XIAO-ESP32S3-History");
+  // Generate fake data 
+  for (uint16_t i = 0; i < TOTAL_POINTS; i++) {
+    sensorHistory[i].timestamp = i; 
+    sensorHistory[i].value = i; 
+  }
 
-    NimBLEServer* server = NimBLEDevice::createServer();
-    NimBLEService* service = server->createService(SERVICE_UUID);
-
-    historyChar = service->createCharacteristic(
-        CHAR_UUID_HISTORY,
-        NIMBLE_PROPERTY::READ
-    );
-
-    historyChar->setValue(circBuffer, BUFFER_LENGTH);
-
-    service->start();
-
-    // -----------------------------
-    // Correct advertising setup
-    // -----------------------------
-    NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
-
-    NimBLEAdvertisementData adData;
-    adData.setName("XIAO-ESP32S3-History");
-    adData.addServiceUUID(SERVICE_UUID);
-
-    adv->setAdvertisementData(adData);
-    adv->start();
-
-    Serial.println("BLE ready, advertising...");
+  NimBLEDevice::init("ESP32S3_NimBLE_v25");
+  pServer = NimBLEDevice::createServer();
+  pServer->setCallbacks(new MyServerCallbacks());
+  NimBLEService *pService = pServer->createService(SERVICE_UUID);
+  pTxCharacteristic = pService->createCharacteristic(
+                        CHARACTERISTIC_UUID_TX,
+                        NIMBLE_PROPERTY::INDICATE
+                      );
+  // pTxCharacteristic->setCallbacks(new txCallbacks());
+  NimBLECharacteristic *pRxCharacteristic = pService->createCharacteristic(
+                                           CHARACTERISTIC_UUID_RX,
+                                           NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR
+                                         );                                       
+  pRxCharacteristic->setCallbacks(new MyCharacteristicCallbacks());
+  pService->start();
+  
+  // Package advertisement profiles
+  NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
+  pAdvertising->addServiceUUID(SERVICE_UUID);
+  pAdvertising->start();
+  
+  Serial.println("[BLE] Infrastructure operational. Awaiting incoming client connection...");
 }
 
-// ----------------------------------------------------
-// Main loop
-// ----------------------------------------------------
 void loop() {
-    int16_t sample = readSensor();
-    addSample(sample);
-    updateBLEBlob();
-
-    delay(SAMPLE_INTERVAL_MS);
+  if (should_send){
+    // sendDebug();
+    sendHistoricalData();
+    should_send = false;
+  }
 }
+
+void sendHistoricalData() {
+  uint16_t negotiatedMtu = NimBLEDevice::getMTU(); // Local configuration baseline
+  
+  if (pServer->getConnectedCount() > 0) {
+      negotiatedMtu = pServer->getPeerInfoByHandle(activeConnHandle).getMTU();
+  }
+
+  int maxPayloadBytes = negotiatedMtu - 3; 
+  int itemSize = sizeof(DataPoint); 
+  Serial.println(itemSize);
+  int itemsPerPacket = maxPayloadBytes / itemSize;
+  
+  Serial.printf("[BLE] Pipeline Configuration -> Negotiated MTU: %d | Items per chunk: %d\n", negotiatedMtu, itemsPerPacket);
+
+  int currentIndex = 0;
+  unsigned long startTime = millis();
+
+  while (currentIndex < TOTAL_POINTS && deviceConnected) {
+    int itemsToSend = min(itemsPerPacket, TOTAL_POINTS - currentIndex);
+    int bytesToSend = itemsToSend * itemSize;
+
+    // Zero-copy reference mapping points straight to index memory slices
+    uint8_t* payloadPtr = (uint8_t*)&sensorHistory[currentIndex];
+
+    pTxCharacteristic->setValue(payloadPtr, bytesToSend);
+    pTxCharacteristic->notify();
+
+    currentIndex += itemsToSend;
+    
+    // Controlled hardware delay protects the ESP32-S3 network ring buffers from overflows
+    delay(10); 
+  }
+  
+  unsigned long duration = millis() - startTime;
+  Serial.printf("[BLE] Bulk transaction accomplished! Delivered %d datapoints in %lu ms\n", currentIndex, duration);
+}
+
