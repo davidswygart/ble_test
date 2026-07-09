@@ -24,6 +24,7 @@ const float OFF_mv = 2100.0;
 /// BLE stuff
 #define SERVICE_UUID        "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 #define CHAR_UUID_HISTORY   "6e400004-b5a3-f393-e0a9-e50e24dcca9e"
+static const uint32_t CLIENT_TIMEOUT_MS = 1000*60*10; // Disconnect client after 10 minutes
 
 // ----------------------------------------------------
 // Global variables and flags
@@ -31,6 +32,32 @@ const float OFF_mv = 2100.0;
 bool isON;
 uint8_t linearBuffer[BUFFER_LENGTH] = {0};
 NimBLECharacteristic* historyChar;
+NimBLEServer* bleServer = nullptr;
+NimBLEAdvertising* bleAdvertising = nullptr;
+bool clientConnected = false;
+uint16_t clientConnId = 0;
+uint32_t clientConnectedSinceMs = 0;
+
+class ServerCallbacks : public NimBLEServerCallbacks {
+  void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) override {
+    clientConnected = true;
+    clientConnId = connInfo.getConnHandle();
+    clientConnectedSinceMs = millis();
+    Serial.println("Client connected");
+    if (bleAdvertising != nullptr) {
+      bleAdvertising->stop();
+    }
+  }
+
+  void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override {
+    clientConnected = false;
+    clientConnId = 0;
+    Serial.println("Client disconnected");
+    if (bleAdvertising != nullptr) {
+      bleAdvertising->start();
+    }
+  }
+};
 
 // ----------------------------------------------------
 // Helper functions
@@ -77,20 +104,21 @@ void setup() {
     isON = false;
 
     NimBLEDevice::init("XIAO-ESP32S3-History");
-    NimBLEServer* server = NimBLEDevice::createServer();
-    NimBLEService* service = server->createService(SERVICE_UUID);
+    bleServer = NimBLEDevice::createServer();
+    bleServer->setCallbacks(new ServerCallbacks());
+    NimBLEService* service = bleServer->createService(SERVICE_UUID);
     historyChar = service->createCharacteristic(
         CHAR_UUID_HISTORY,
         NIMBLE_PROPERTY::READ
     );
     historyChar->setValue(linearBuffer, BUFFER_LENGTH);
     service->start();
-    NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
+    bleAdvertising = NimBLEDevice::getAdvertising();
     NimBLEAdvertisementData adData;
     adData.setName("XIAO-ESP32S3-History");
     adData.addServiceUUID(SERVICE_UUID);
-    adv->setAdvertisementData(adData);
-    adv->start();
+    bleAdvertising->setAdvertisementData(adData);
+    bleAdvertising->start();
 
     Serial.println("BLE ready, advertising...");
 }
@@ -111,6 +139,12 @@ void loop() {
   }
 
   addToRecord(mV);
+
+  if (clientConnected && (bleServer != nullptr) && (millis() - clientConnectedSinceMs >= CLIENT_TIMEOUT_MS)) {
+    Serial.printf("Client timeout reached (%lu ms), disconnecting...\n", CLIENT_TIMEOUT_MS);
+    bleServer->disconnect(clientConnId);
+  }
+
   static const int loop_delay = SAMPLE_INTERVAL_MS-(n_avg*wait);
   delay(loop_delay);
 }
