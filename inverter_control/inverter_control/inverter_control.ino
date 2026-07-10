@@ -23,15 +23,18 @@ const float OFF_mv = 2100.0;
 
 /// BLE stuff
 #define SERVICE_UUID        "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
-#define CHAR_UUID_HISTORY   "6e400004-b5a3-f393-e0a9-e50e24dcca9e"
+#define CHAR_UUID_BATTERY   "6e400004-b5a3-f393-e0a9-e50e24dcca9e"
+#define CHAR_UUID_DUTY      "6e400005-b5a3-f393-e0a9-e50e24dcca9e"
 static const uint32_t CLIENT_TIMEOUT_MS = 1000*60*10; // Disconnect client after 10 minutes
 
 // ----------------------------------------------------
 // Global variables and flags
 // ----------------------------------------------------
 bool isON;
-uint8_t linearBuffer[BUFFER_LENGTH] = {0};
-NimBLECharacteristic* historyChar;
+uint8_t batBuffer[BUFFER_LENGTH] = {0};
+uint8_t dutyBuffer[BUFFER_LENGTH] = {0};
+NimBLECharacteristic* batChar;
+NimBLECharacteristic* dutyChar;
 NimBLEServer* bleServer = nullptr;
 NimBLEAdvertising* bleAdvertising = nullptr;
 bool clientConnected = false;
@@ -80,17 +83,20 @@ uint8_t rescale_mV_to_byte(float mV) {
   return static_cast<uint8_t>(((mV - min_mV) * multiplier) + 0.5f);
 }
 
-void addToRecord(float mV) {
-  // Shift the buffer to the left to make room for the new value
+void addToRecord(float mV, uint8_t duty) {
+  // Shift the buffers to the left to make room for the new value
   for (int i = 1; i < BUFFER_LENGTH; i++) {
-      linearBuffer[i-1] = linearBuffer[i];
+      batBuffer[i-1] = batBuffer[i];
+      dutyBuffer[i-1] = dutyBuffer[i];
   }
 
-  // Set the last element of the buffer to the new sensor reading
-  linearBuffer[BUFFER_LENGTH - 1] = rescale_mV_to_byte(mV);
-  
-  // Update the BLE characteristic with the new buffer value (we could only do this onRead, but this is simpler)
-  historyChar->setValue(linearBuffer, BUFFER_LENGTH);
+  // Set the last element of the buffers to the new sensor reading
+  batBuffer[BUFFER_LENGTH - 1] = rescale_mV_to_byte(mV);
+  dutyBuffer[BUFFER_LENGTH - 1] = duty;
+
+  // Update the BLE characteristics with the new buffer value (we could only do this onRead, but this is simpler)
+  batChar->setValue(batBuffer, BUFFER_LENGTH);
+  dutyChar->setValue(dutyBuffer, BUFFER_LENGTH);
 }
 
 // ----------------------------------------------------
@@ -107,11 +113,16 @@ void setup() {
     bleServer = NimBLEDevice::createServer();
     bleServer->setCallbacks(new ServerCallbacks());
     NimBLEService* service = bleServer->createService(SERVICE_UUID);
-    historyChar = service->createCharacteristic(
-        CHAR_UUID_HISTORY,
+    batChar = service->createCharacteristic(
+        CHAR_UUID_BATTERY,
         NIMBLE_PROPERTY::READ
     );
-    historyChar->setValue(linearBuffer, BUFFER_LENGTH);
+    batChar->setValue(batBuffer, BUFFER_LENGTH);
+    dutyChar = service->createCharacteristic(
+        CHAR_UUID_DUTY,
+        NIMBLE_PROPERTY::READ
+    );
+    dutyChar->setValue(dutyBuffer, BUFFER_LENGTH);
     service->start();
     bleAdvertising = NimBLEDevice::getAdvertising();
     NimBLEAdvertisementData adData;
@@ -138,7 +149,7 @@ void loop() {
     isON = false;
   }
 
-  addToRecord(mV);
+  addToRecord(mV, isON ? 255 : 0);
 
   if (clientConnected && (bleServer != nullptr) && (millis() - clientConnectedSinceMs >= CLIENT_TIMEOUT_MS)) {
     Serial.printf("Client timeout reached (%lu ms), disconnecting...\n", CLIENT_TIMEOUT_MS);
