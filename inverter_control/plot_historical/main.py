@@ -16,7 +16,7 @@ ax2.set_ylabel('Duty (%)', color='tab:grey')
 ax2.tick_params(axis='y', labelcolor='tab:grey')
 
 for t in table_list:
-    ax2.plot(t.sample_times, t.duty, color='tab:grey')
+    ax2.scatter(t.sample_times, t.duty, color='tab:grey')
     ax1.plot(t.sample_times, t.battery, color='tab:blue')
     
 plt.grid(True, alpha=0.3)
