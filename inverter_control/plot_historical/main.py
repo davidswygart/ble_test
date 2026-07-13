@@ -3,19 +3,22 @@ import matplotlib.pyplot as plt
 import config
 from datetime import datetime
 
-timestamp, vals = get_log_vals("C:/Users/daswyga/Downloads/log.txt")
-xVals = [-i * config.update_interval_mins / 60 for i in reversed(range(len(vals)))]
+table_list = get_log_vals("G:/My Drive/Solar")
 
 
-midnight = datetime.strptime("00", "%H")
-noon = datetime.strptime("12", "%H")
-noonDelta = (timestamp-noon).total_seconds()/60/60 % 24 * -1
-nightDelta = (timestamp-midnight).total_seconds()/60/60 % 24 * -1
+fig, ax1 = plt.subplots()
+ax1.set_xlabel("Datetime")
+ax1.set_ylabel('Battery (V)', color='tab:blue')
+ax1.tick_params(axis='y', labelcolor='tab:blue')
 
-plt.plot(xVals, vals)
-plt.axvline(noonDelta, color="yellow", linestyle="dotted", linewidth=1.5)
-plt.axvline(nightDelta, color="red", linestyle="dotted", linewidth=1.5)
-plt.xlabel(f"Hours since {timestamp.strftime('%H:%M:%S.%f')[:-3]}")
-plt.ylabel("Battery (V)")
+ax2 = ax1.twinx()
+ax2.set_ylabel('Duty (%)', color='tab:grey')
+ax2.tick_params(axis='y', labelcolor='tab:grey')
+
+for t in table_list:
+    ax2.plot(t.sample_times, t.duty, color='tab:grey')
+    ax1.plot(t.sample_times, t.battery, color='tab:blue')
+    
 plt.grid(True, alpha=0.3)
 plt.show()
+print('hi')
