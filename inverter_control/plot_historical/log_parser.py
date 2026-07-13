@@ -39,7 +39,10 @@ def parse_log(log_file: str | Path, sample_period: float = 5*60, battery_UUID: s
     if bat_time is None or battery_val is None:
         raise ValueError(f"No valid battery values found in log file {log_file}")
     battery_Voltage = [hex2BatV(val) for val in battery_val] # Convert hex values to battery voltage
-    sample_times = [bat_time - timedelta(seconds=i*sample_period) for i in range(len(battery_Voltage))] # Generate timestamps for each sample
+    
+    # Generate timestamps for each data point, given fixed sample period
+    seconds_since_reading = [i*sample_period for i in reversed(range(len(battery_Voltage)))]
+    sample_times = [bat_time - timedelta(seconds=s) for s in seconds_since_reading] # Generate timestamps for each sample
     
     # Read the duty values and convert to percent (may not be present in all logs)
     (_, duty_val) = get_char_vals(log_text, duty_UUID)
