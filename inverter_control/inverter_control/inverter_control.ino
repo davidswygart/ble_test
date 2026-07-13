@@ -136,6 +136,7 @@ void setup() {
 
 void loop() {
   float mV = readAvg();
+  addToRecord(mV, isON ? 255 : 0);
 
   if (!isON & (mV > ON_mV)){
     digitalWrite(OUT_PIN, HIGH);
@@ -148,8 +149,6 @@ void loop() {
     Serial.println("Turning OFF");
     isON = false;
   }
-
-  addToRecord(mV, isON ? 255 : 0);
 
   if (clientConnected && (bleServer != nullptr) && (millis() - clientConnectedSinceMs >= CLIENT_TIMEOUT_MS)) {
     Serial.printf("Client timeout reached (%lu ms), disconnecting...\n", CLIENT_TIMEOUT_MS);
