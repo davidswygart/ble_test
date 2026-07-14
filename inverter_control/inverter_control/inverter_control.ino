@@ -6,20 +6,20 @@
 // ----------------------------------------------------
 
 /// ADC read of voltage 
-const int ADC_PIN = 9;
-const int n_avg = 1000;
+const int ADC_PIN = 8;
+const int n_avg = 1000; // How many samples to take for average
 const int wait = 1; //How long (ms) to wait between samples for average
-const uint32_t SAMPLE_INTERVAL_MS = 1000 * 60 * 5; // How long to wait between readings (5 minutes)
+const uint32_t SAMPLE_INTERVAL_MS = 1000 * 60 * 10; // How long to wait between readings (10 minutes)
 
 /// Saving historical log
-const float max_mV = 3300.0;
-const float min_mV = 1300.0;
+const float max_mV = 2688.0; // ~15V
+const float min_mV = 1594.0; // ~9V
 const size_t BUFFER_LENGTH = 512; //Can't go over 512 bytes for normal Characteristic
 
 /// Output
 const int OUT_PIN = 4;
-const float ON_mV = 2150.0;
-const float OFF_mv = 2100.0;
+const float ON_mV = 2319.0; // ~13.0V
+const float OFF_mv = 2282.0; // ~12.8V
 
 /// BLE stuff
 #define SERVICE_UUID        "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
@@ -72,7 +72,6 @@ float readAvg() {
     delay(wait);
     }
   float avg = sum / n_avg;
-  Serial.printf("ADC: %f mV\n", avg);
   return avg;
 }
 
@@ -84,6 +83,10 @@ uint8_t rescale_mV_to_byte(float mV) {
 }
 
 void addToRecord(float mV, uint8_t duty) {
+  // Rescale mV and print values
+  uint8_t mV_byte = rescale_mV_to_byte(mV);
+  Serial.printf("ADC: %f mV (%i); Duty: %i\n", mV, mV_byte, duty);
+
   // Shift the buffers to the left to make room for the new value
   for (int i = 1; i < BUFFER_LENGTH; i++) {
       batBuffer[i-1] = batBuffer[i];
@@ -91,7 +94,7 @@ void addToRecord(float mV, uint8_t duty) {
   }
 
   // Set the last element of the buffers to the new sensor reading
-  batBuffer[BUFFER_LENGTH - 1] = rescale_mV_to_byte(mV);
+  batBuffer[BUFFER_LENGTH - 1] = mV_byte;
   dutyBuffer[BUFFER_LENGTH - 1] = duty;
 
   // Update the BLE characteristics with the new buffer value (we could only do this onRead, but this is simpler)
