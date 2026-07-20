@@ -2,7 +2,7 @@ import re
 from pathlib import Path
 from typing import List, Optional, Tuple
 from datetime import datetime, timedelta
-import config
+from config import byte2BatV
 import pandas as pd
 
 def get_log_vals(log_dir: str | Path) -> List[pd.DataFrame]:
@@ -17,17 +17,6 @@ def get_log_vals(log_dir: str | Path) -> List[pd.DataFrame]:
             continue
     return table_list
 
-def hex2BatV (logVal):
-    adc = log2ADC(logVal)
-    return ADC2Voltage(adc)
-
-def log2ADC(logVal):
-    mult = 255 / (config.max_mV - config.min_mV)
-    return logVal / mult + config.min_mV - 0.5
-
-def ADC2Voltage(Esp_mV):
-    return Esp_mV / config.v_div / 1000
-
 def parse_log(log_file: str | Path, sample_period: float = 5*60, battery_UUID: str = "6e400004-b5a3-f393-e0a9-e50e24dcca9e", duty_UUID: str = "6e400005-b5a3-f393-e0a9-e50e24dcca9e") -> pd.DataFrame:
     """Extract the timestamp and decoded byte values from the last BLE read response entry in a log file."""
     path = Path(log_file)
@@ -38,7 +27,7 @@ def parse_log(log_file: str | Path, sample_period: float = 5*60, battery_UUID: s
     (bat_time, battery_val) = get_char_vals(log_text, battery_UUID)
     if bat_time is None or battery_val is None:
         raise ValueError(f"No valid battery values found in log file {log_file}")
-    battery_Voltage = [hex2BatV(val) for val in battery_val] # Convert hex values to battery voltage
+    battery_Voltage = [byte2BatV(val) for val in battery_val] # Convert hex values to battery voltage
     
     # Generate timestamps for each data point, given fixed sample period
     seconds_since_reading = [i*sample_period for i in reversed(range(len(battery_Voltage)))]
