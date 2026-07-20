@@ -4,6 +4,7 @@
 #define SERVICE_UUID           "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_UUID_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_UUID_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
+#define TARGET_MTU 256
 
 NimBLEServer *pServer = NULL;
 NimBLECharacteristic *pTxCharacteristic = NULL;
@@ -42,7 +43,13 @@ class MyServerCallbacks: public NimBLEServerCallbacks {
         Serial.printf("[BLE] Client successfully connected! Connection Handle: %d\n", activeConnHandle);
         
         // PERFORMANCE INJECTION: Request optimized 15ms window directly via server reference
-        pServer->updateConnParams(activeConnHandle, 12, 24, 0, 400); 
+        pServer->updateConnParams(activeConnHandle, 12, 24, 0, 400);
+
+        // Request our desired MTU
+        NimBLEClient* pClient = pServer->getClient(activeConnHandle); 
+        if (pClient != nullptr) {
+            pClient->exchangeMTU(); 
+        } 
     }
     
     void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override {
@@ -51,6 +58,10 @@ class MyServerCallbacks: public NimBLEServerCallbacks {
         Serial.printf("[BLE] Client disconnected cleanly. Reason code: %d\n", reason);
         Serial.println("[BLE] Resetting stack advertising profile...");
         pServer->startAdvertising(); 
+    }
+
+    void onMTUChange(uint16_t mtu, NimBLEConnInfo& connInfo) override {
+        Serial.printf("MTU negotiation complete. Current MTU size: %d\n", mtu);
     }
 };
 
@@ -66,6 +77,7 @@ void setup() {
   }
 
   NimBLEDevice::init("ESP32S3_NimBLE_v25");
+  NimBLEDevice::setMTU(TARGET_MTU);
   pServer = NimBLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
   NimBLEService *pService = pServer->createService(SERVICE_UUID);
