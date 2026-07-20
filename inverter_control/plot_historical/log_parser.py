@@ -2,7 +2,7 @@ import re
 from pathlib import Path
 from typing import List, Optional, Tuple
 from datetime import datetime, timedelta
-from config import byte2BatV
+from config import byte2BatV, update_interval_mins, battery_UUID, duty_UUID
 import pandas as pd
 
 def get_log_vals(log_dir: str | Path) -> List[pd.DataFrame]:
@@ -17,11 +17,10 @@ def get_log_vals(log_dir: str | Path) -> List[pd.DataFrame]:
             continue
     return table_list
 
-def parse_log(log_file: str | Path, sample_period: float = 5*60, battery_UUID: str = "6e400004-b5a3-f393-e0a9-e50e24dcca9e", duty_UUID: str = "6e400005-b5a3-f393-e0a9-e50e24dcca9e") -> pd.DataFrame:
+def parse_log(log_file: str | Path) -> pd.DataFrame:
     """Extract the timestamp and decoded byte values from the last BLE read response entry in a log file."""
     path = Path(log_file)
     log_text = path.read_text(encoding="utf-8", errors="replace")
-
 
     # Read the battery values and convert to voltage
     (bat_time, battery_val) = get_char_vals(log_text, battery_UUID)
@@ -30,7 +29,7 @@ def parse_log(log_file: str | Path, sample_period: float = 5*60, battery_UUID: s
     battery_Voltage = [byte2BatV(val) for val in battery_val] # Convert hex values to battery voltage
     
     # Generate timestamps for each data point, given fixed sample period
-    seconds_since_reading = [i*sample_period for i in reversed(range(len(battery_Voltage)))]
+    seconds_since_reading = [i*update_interval_mins*60 for i in reversed(range(len(battery_Voltage)))]
     sample_times = [bat_time - timedelta(seconds=s) for s in seconds_since_reading] # Generate timestamps for each sample
     
     # Read the duty values and convert to percent (may not be present in all logs)
