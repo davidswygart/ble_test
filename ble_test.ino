@@ -14,12 +14,13 @@ bool should_send = false;
 volatile bool deviceConnected = false;
 volatile uint16_t activeConnHandle = 0;
 
-// Compact 8-byte historical entry structure
+// Data point saved in packed struct (avoid padding confusion)
 struct __attribute__((packed)) DataPoint {
   uint16_t timestamp; 
-  uint8_t value;    
+  uint16_t batt_mV;
+  uint8_t duty;
 };
-static_assert(sizeof(DataPoint) == 3, "DataPoint must be 3 bytes");
+static_assert(sizeof(DataPoint) == 5, "DataPoint must be 5 bytes");
 
 const int TOTAL_POINTS = 10000;
 DataPoint sensorHistory[TOTAL_POINTS];
@@ -72,8 +73,9 @@ void setup() {
 
   // Generate fake data 
   for (uint16_t i = 0; i < TOTAL_POINTS; i++) {
-    sensorHistory[i].timestamp = i; 
-    sensorHistory[i].value = i; 
+    sensorHistory[i].timestamp = i*3; 
+    sensorHistory[i].batt_mV = i*2;
+    sensorHistory[i].duty = i;
   }
 
   NimBLEDevice::init("ESP32S3_NimBLE_v25");
