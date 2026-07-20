@@ -1,7 +1,6 @@
 from log_parser import get_log_vals
 import matplotlib.pyplot as plt
-import config
-from datetime import datetime
+import matplotlib.dates as mdates
 
 table_list = get_log_vals("G:/My Drive/Solar")
 
@@ -19,6 +18,9 @@ for t in table_list:
     ax2.scatter(t.sample_times, t.duty, color='tab:grey')
     ax1.plot(t.sample_times, t.battery, color='tab:blue')
     
+date_fmt = mdates.DateFormatter('%m-%d\n%H:%M')
+ax1.xaxis.set_major_formatter(date_fmt)
+
 plt.grid(True, alpha=0.3)
 plt.show()
 print('hi')
