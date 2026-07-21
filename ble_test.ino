@@ -12,7 +12,7 @@ NimBLEServer *pServer = NULL;
 NimBLECharacteristic *pTxCharacteristic = NULL;
 
 // Declared volatile to enforce cross-core execution safety
-bool should_send = false;
+bool new_write = false;
 volatile bool deviceConnected = false;
 volatile uint16_t activeConnHandle = 0;
 
@@ -31,10 +31,8 @@ void sendHistoricalData();
 
 class MyCharacteristicCallbacks: public NimBLECharacteristicCallbacks {
     void onWrite(NimBLECharacteristic* pCharacteristic, NimBLEConnInfo& connInfo) override {
-        std::string rxValue = pCharacteristic->getValue();
-        if (rxValue.length() > 0 && deviceConnected) {
-            Serial.println("[BLE] Valid transfer command recognized. Initiating bulk dump...");
-            should_send = true;
+        if (pCharacteristic->getValue().length() > 0 && deviceConnected) {
+            new_write = true;
         }
     }
 };
@@ -87,7 +85,7 @@ void setup() {
   NimBLEService *pService = pServer->createService(SERVICE_UUID);
   pTxCharacteristic = pService->createCharacteristic(
                         CHARACTERISTIC_UUID_TX,
-                        NIMBLE_PROPERTY::INDICATE
+                        NIMBLE_PROPERTY::NOTIFY
                       );
   // pTxCharacteristic->setCallbacks(new txCallbacks());
   NimBLECharacteristic *pRxCharacteristic = pService->createCharacteristic(
@@ -107,11 +105,41 @@ void setup() {
 }
 
 void loop() {
-  if (should_send){
-    // sendDebug();
+  if (new_write){
+    new_write = false;
+
+    Serial.println("Starting bulk transfer");
     sendHistoricalData();
-    should_send = false;
   }
+}
+
+
+
+typedef struct {
+    uint16_t seq_num : 15; 
+    uint16_t fin     : 1;  
+} __attribute__((packed)) ble_header_t;
+
+void send_ble_packet(uint8_t is_fin, uint16_t seq, uint8_t* payload, size_t payload_len) {
+    ble_header_t header;
+    header.seq_num = seq;
+    header.fin = is_fin;
+
+    size_t header_len = sizeof(ble_header_t); // 2 bytes
+    size_t total_len = header_len + payload_len;
+    uint8_t tx_buffer[total_len];
+
+    // Copy the header into the front of the array
+    memcpy(tx_buffer, &header, header_len);
+    
+    // Copy the payload data immediately after the header
+    if (payload_len > 0 && payload != nullptr) {
+      memcpy(tx_buffer + header_len, payload, payload_len);
+    }
+
+    // 5. Send via NimBLE
+    pTxCharacteristic->setValue(tx_buffer, total_len);
+    pTxCharacteristic->notify(); 
 }
 
 void sendHistoricalData() {
@@ -121,33 +149,34 @@ void sendHistoricalData() {
       negotiatedMtu = pServer->getPeerInfoByHandle(activeConnHandle).getMTU();
   }
 
-  int maxPayloadBytes = negotiatedMtu - 3; 
+  int maxPayloadBytes = negotiatedMtu - 3 - sizeof(ble_header_t); 
   int itemSize = sizeof(DataPoint); 
-  Serial.println(itemSize);
   int itemsPerPacket = maxPayloadBytes / itemSize;
   
   Serial.printf("[BLE] Pipeline Configuration -> Negotiated MTU: %d | Items per chunk: %d\n", negotiatedMtu, itemsPerPacket);
 
   int currentIndex = 0;
+  uint16_t sequence_number = 0;
   unsigned long startTime = millis();
-
   while (currentIndex < TOTAL_POINTS && deviceConnected) {
-    int itemsToSend = min(itemsPerPacket, TOTAL_POINTS - currentIndex);
-    int bytesToSend = itemsToSend * itemSize;
+    int num_remaining = TOTAL_POINTS - currentIndex;
+    uint8_t is_fin = (itemsPerPacket >= num_remaining) ? 1 : 0;
+    int itemsToSend = (is_fin) ? num_remaining : itemsPerPacket;
+    int payload_len = itemsToSend * itemSize;
 
-    // Zero-copy reference mapping points straight to index memory slices
     uint8_t* payloadPtr = (uint8_t*)&sensorHistory[currentIndex];
 
-    pTxCharacteristic->setValue(payloadPtr, bytesToSend);
-    pTxCharacteristic->notify();
+    new_write = false;
+    Serial.printf("[BLE] Sending packet %d\n", sequence_number);
+    send_ble_packet(is_fin, sequence_number, payloadPtr, payload_len);
+    while (!new_write && deviceConnected){delay(1);} // Wait for confirmation
+    new_write = false;
 
     currentIndex += itemsToSend;
-    
-    // Controlled hardware delay protects the ESP32-S3 network ring buffers from overflows
-    delay(10); 
+    sequence_number++;
   }
   
   unsigned long duration = millis() - startTime;
-  Serial.printf("[BLE] Bulk transaction accomplished! Delivered %d datapoints in %lu ms\n", currentIndex, duration);
+  Serial.printf("[BLE] Bulk transaction accomplished! Delivered %d datapoints, in %d packets, in %lu ms\n", currentIndex, sequence_number, duration);
 }
 
