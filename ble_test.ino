@@ -1,10 +1,12 @@
 #include <NimBLEDevice.h>
 
 // Standard Nordic UART Service (NUS) UUIDs
+#define DEVICE_NAME "STREAM_TEST"
 #define SERVICE_UUID           "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_UUID_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_UUID_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
 #define TARGET_MTU 256
+
 
 NimBLEServer *pServer = NULL;
 NimBLECharacteristic *pTxCharacteristic = NULL;
@@ -73,12 +75,12 @@ void setup() {
 
   // Generate fake data 
   for (uint16_t i = 0; i < TOTAL_POINTS; i++) {
-    sensorHistory[i].timestamp = i*3; 
+    sensorHistory[i].timestamp = i*1; 
     sensorHistory[i].batt_mV = i*2;
     sensorHistory[i].duty = i;
   }
 
-  NimBLEDevice::init("ESP32S3_NimBLE_v25");
+  NimBLEDevice::init(DEVICE_NAME);
   NimBLEDevice::setMTU(TARGET_MTU);
   pServer = NimBLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
@@ -97,6 +99,7 @@ void setup() {
   
   // Package advertisement profiles
   NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
+  pAdvertising->setName(DEVICE_NAME);
   pAdvertising->addServiceUUID(SERVICE_UUID);
   pAdvertising->start();
   
